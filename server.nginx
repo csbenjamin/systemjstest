@@ -1,0 +1,19 @@
+server{
+        listen 80;
+
+        root /home/cristiano/test;
+
+
+        server_name test.cc;
+
+        index index.html;
+
+        location / {
+                try_files $uri =404;
+        }
+        location ~ ^/module1/index.* {
+                try_files /module1/index.js =404;
+        }
+
+}
+
