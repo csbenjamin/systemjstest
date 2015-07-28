@@ -1249,6 +1249,22 @@ function dedupe(deps) {
   return newDeps;
 }
 
+function group(deps) {
+  var names = [];
+  var indices = [];
+  for (var i = 0, l = deps.length; i < l; i++) {
+    var index = indexOf.call(names, deps[i]);
+    if (index === -1) {
+      names.push(deps[i]);
+      indices.push([i]);
+    }
+    else {
+      indices[index].push(i);
+    }
+  }
+  return { names: names, indices: indices };
+}
+
 function extend(a, b, underwrite) {
   for (var p in b) {
     if (!underwrite || !(p in a))
@@ -1597,6 +1613,14 @@ SystemJSLoader.prototype.config = function(cfg) {
  */
 (function() {
 
+  var getOwnPropertyDescriptor = true;
+  try {
+    Object.getOwnPropertyDescriptor({ a: 0 }, 'a');
+  }
+  catch(e) {
+    getOwnPropertyDescriptor = false;
+  }
+
   /*
    * There are two variations of System.register:
    * 1. System.register for ES6 conversion (2-3 params) - System.register([name, ]deps, declare)
@@ -1610,7 +1634,7 @@ SystemJSLoader.prototype.config = function(cfg) {
    *
    */
   var anonRegister;
-  var calledRegister;
+  var calledRegister = false;
   function doRegister(loader, name, register) {
     calledRegister = true;
 
@@ -1873,10 +1897,15 @@ SystemJSLoader.prototype.config = function(cfg) {
       else {
         module.dependencies.push(null);
       }
-
-      // run the setter for this dependency
-      if (module.setters[i])
-        module.setters[i](depExports);
+      
+      // run setters for all entries with the matching dependency name
+      var originalIndices = entry.originalIndices[i];
+      for (var j = 0, len = originalIndices.length; j < len; ++j) {
+        var index = originalIndices[j];
+        if (module.setters[index]) {
+          module.setters[index](depExports);
+        }
+      }
     }
   }
 
@@ -1951,7 +1980,7 @@ SystemJSLoader.prototype.config = function(cfg) {
 
       // don't trigger getters/setters in environments that support them
       if (typeof exports == 'object' || typeof exports == 'function') {
-        if (Object.getOwnPropertyDescriptor) {
+        if (getOwnPropertyDescriptor) {
           var d;
           for (var p in exports)
             if (d = Object.getOwnPropertyDescriptor(exports, p))
@@ -2101,6 +2130,9 @@ SystemJSLoader.prototype.config = function(cfg) {
 
         if (!entry && loader.defined[load.name])
           entry = loader.defined[load.name];
+
+        anonRegister = null;
+        calledRegister = false;
       }
 
       // named bundles are just an empty module
@@ -2115,8 +2147,11 @@ SystemJSLoader.prototype.config = function(cfg) {
 
       // place this module onto defined for circular references
       loader.defined[load.name] = entry;
-
-      entry.deps = dedupe(entry.deps);
+      
+      var grouped = group(entry.deps);
+      
+      entry.deps = grouped.names;
+      entry.originalIndices = grouped.indices;
       entry.name = load.name;
 
       // first, normalize all dependencies
